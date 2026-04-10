@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+/* Panel her zaman koyu tema (sistem açık modunda bile beyaz olmasın) */
+:root {
+  --background: #09090b;
+  --foreground: #fafafa;
+}
+
+html {
+  color-scheme: dark;
+}
+
+body {
+  color: var(--foreground);
+  background: var(--background);
+  min-height: 100vh;
+}

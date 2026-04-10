@@ -1,0 +1,4 @@
+{
+  "agentAddress": "0xYOUR_SUPER_SAIYAN_RAICHU_AGENT_WALLET",
+  "publicKey": "-----BEGIN PUBLIC KEY-----\nPASTE_RSA_PUBLIC_KEY_PEM_HERE\n-----END PUBLIC KEY-----\n"
+}

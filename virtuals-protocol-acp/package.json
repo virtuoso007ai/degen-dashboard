@@ -1,0 +1,72 @@
+{
+  "name": "virtuals-protocol-acp",
+  "version": "0.4.0",
+  "description": "Agent Commerce Protocol (ACP) CLI — wallet, marketplace, token, and seller runtime for AI agents",
+  "type": "module",
+  "bin": {
+    "acp": "./bin/acp.ts"
+  },
+  "scripts": {
+    "start": "tsx src/seller/runtime/seller.ts",
+    "acp": "tsx bin/acp.ts",
+    "setup": "tsx bin/acp.ts setup",
+    "offering:create": "tsx bin/acp.ts sell create",
+    "offering:delete": "tsx bin/acp.ts sell delete",
+    "resource:create": "tsx bin/acp.ts sell resource create",
+    "resource:delete": "tsx bin/acp.ts sell resource delete",
+    "seller:run": "tsx bin/acp.ts serve start",
+    "seller:stop": "tsx bin/acp.ts serve stop",
+    "seller:check": "tsx bin/acp.ts serve status",
+    "degen:join": "tsx scripts/degen/post-join-leaderboard.ts",
+    "degen:join:keys": "tsx scripts/degen/generate-join-keys.ts",
+    "degen:join:decrypt": "tsx scripts/degen/decrypt-join-key.ts",
+    "degen:claw:leaderboard": "tsx scripts/degen/dgclaw-leaderboard.ts",
+    "degen:claw:set-price": "tsx scripts/degen/dgclaw-set-subscription-price.ts",
+    "degen:claw:verify": "tsx scripts/degen/dgclaw-verify-alignment.ts",
+    "degen:perp:deposit": "tsx scripts/degen/post-perp-deposit.ts",
+    "degen:perp:withdraw": "tsx scripts/degen/post-perp-withdraw.ts",
+    "degen:perp:open:btc": "tsx scripts/degen/post-perp-open-btc.ts",
+    "degen:perp:open:hype": "tsx scripts/degen/post-perp-open-hype.ts",
+    "degen:perp:open:eth": "tsx scripts/degen/post-perp-open-eth.ts",
+    "degen:perp:open:tao": "tsx scripts/degen/post-perp-open-tao.ts",
+    "degen:perp:open:sol": "tsx scripts/degen/post-perp-open-sol.ts",
+    "degen:eth:signal": "tsx scripts/degen/eth-signal-degen.ts",
+    "degen:eth:signal:scalp": "tsx scripts/degen/eth-signal-degen.ts",
+    "degen:perp:open:eth:10": "tsx scripts/degen/post-perp-open-eth.ts 12",
+    "degen:perp:open:virtual": "tsx scripts/degen/post-perp-open-virtual.ts",
+    "degen:perp:open:virtual:10": "tsx scripts/degen/post-perp-open-virtual.ts 14",
+    "degen:perp:open:virtual:15": "tsx scripts/degen/post-perp-open-virtual.ts 21",
+    "degen:perp:open:virtual:20:3x": "tsx scripts/degen/post-perp-open-virtual.ts 28 3",
+    "degen:perp:open:aixbt:10": "tsx scripts/degen/post-perp-open-aixbt.ts 40",
+    "degen:perp:close": "tsx scripts/degen/post-perp-close.ts",
+    "degen:perp:close:aixbt": "tsx scripts/degen/post-perp-close-aixbt.ts",
+    "degen:perp:close:eth": "tsx scripts/degen/post-perp-close-eth.ts",
+    "degen:perp:close:pair": "tsx scripts/degen/post-perp-close-pair.ts",
+    "degen:perp:modify": "tsx scripts/degen/post-perp-modify.ts",
+    "degen:perp:modify:mid1pct": "tsx scripts/degen/post-perp-modify-mid-pct.ts",
+    "degen:buy:token": "tsx scripts/degen/post-buy-agent-token.ts",
+    "degen:subscribe": "tsx scripts/degen/post-subscribe-dgclaw.ts",
+    "dgclaw:subscribe": "tsx scripts/degen/post-subscribe-dgclaw.ts",
+    "hl:status": "tsx scripts/hl-clearinghouse.ts",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
+    "prepare": "husky"
+  },
+  "dependencies": {
+    "axios": "^1.13.5",
+    "dotenv": "^16.4.5",
+    "socket.io-client": "^4.8.1",
+    "tsx": "^4.19.2"
+  },
+  "devDependencies": {
+    "@types/node": "^25.2.3",
+    "husky": "^9.1.7",
+    "lint-staged": "^15.4.3",
+    "prettier": "^3.4.2",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "lint-staged": {
+    "*.{ts,tsx,js,jsx,json,md}": "prettier --write"
+  }
+}
