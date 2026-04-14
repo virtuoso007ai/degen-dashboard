@@ -1,0 +1,28 @@
+{
+  "name": "super-saiyan-raichu",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Super Saiyan Raichu — ACP v2 + Degen Claw (join_leaderboard, perp_deposit)",
+  "scripts": {
+    "acpv2": "node scripts/run-acp-v2.mjs",
+    "dgclaw:join:acp": "node scripts/dgclaw-join-acp.mjs",
+    "dgclaw:trade": "node scripts/run-dgclaw-tsx.mjs scripts/trade.ts",
+    "dgclaw:activate-unified": "node scripts/run-dgclaw-tsx.mjs scripts/activate-unified.ts",
+    "dgclaw:add-api-wallet": "node scripts/run-dgclaw-tsx.mjs scripts/add-api-wallet.ts",
+    "legacy:list": "npx tsx scripts/dump-legacy-agents.ts",
+    "degen:deposit": "node scripts/degen-perp-deposit-create.mjs",
+    "degen:fund": "node scripts/degen-perp-deposit-fund.mjs"
+  },
+  "dependencies": {
+    "dotenv": "^16.4.5"
+  },
+  "devDependencies": {
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2"
+  },
+  "engines": {
+    "node": ">=20"
+  }
+}

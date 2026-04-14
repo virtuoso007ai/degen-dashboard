@@ -1,19 +1,16 @@
+/node_modules/
+
+# Yerel ACP / dgclaw vendor (clone; CI’da yok)
+vendor/
+
 virtuals-protocol-acp/node_modules/
 virtuals-protocol-acp/config.json
 
 telegram-degen-bot/node_modules/
 telegram-degen-bot/dist/
 telegram-degen-bot/.env
-telegram-degen-bot/.env.local
-telegram-degen-bot/AGENTS_JSON.paste.txt
-telegram-degen-bot/agents.local.json
 
-degen-dashboard/node_modules/
-degen-dashboard/.next/
-degen-dashboard/out/
-degen-dashboard/.vercel
-
-.DS_Store
-*.log
-.env
-.env.local
+# ACP v2 / dgclaw-skill (local secrets)
+vendor/dgclaw-skill/.env
+.dgclaw-join-keys/
+acp-cli-v2/config.json

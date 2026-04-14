@@ -1,13 +1,12 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv } from "@/lib/agents";
+import { parseAgentsFromEnv, getHlWallet } from "@/lib/agents";
 import { requireSession } from "@/lib/auth-route";
-import { resolveWalletForDegen } from "@/lib/wallet";
 import axios from "axios";
 
 export const dynamic = "force-dynamic";
 
 const HL_INFO_URL =
-  process.env.HYPERLIQUID_INFO_URL?.trim() || "https://api.hyperliquid-testnet.xyz/info";
+  process.env.HYPERLIQUID_INFO_URL?.trim() || "https://api.hyperliquid.xyz/info";
 
 type HyperLiquidOpenOrder = {
   coin: string;
@@ -52,13 +51,13 @@ export async function GET() {
   const rows = await Promise.all(
     agents.map(async (a) => {
       try {
-        const w = await resolveWalletForDegen(a);
+        const w = getHlWallet(a);
         if (!w) {
           return {
             alias: a.alias,
             label: a.label,
             wallet: null as string | null,
-            error: "Cüzdan çözülemedi",
+            error: "HL cüzdan yok",
             orders: [] as HyperLiquidOpenOrder[],
           };
         }
