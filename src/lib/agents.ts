@@ -4,6 +4,7 @@ export type AgentEntry = {
   forumApiKey?: string;
   label?: string;
   walletAddress?: string;
+  hlWallet?: string;
 };
 
 function normalizeAlias(s: string): string {
@@ -36,6 +37,8 @@ export function parseAgentsFromEnv(): AgentEntry[] {
       label: o.label != null ? String(o.label).trim() : undefined,
       walletAddress:
         o.walletAddress != null ? String(o.walletAddress).trim() : undefined,
+      hlWallet:
+        o.hlWallet != null ? String(o.hlWallet).trim() : undefined,
     });
   }
   if (out.length === 0) throw new Error("Geçerli agent yok");
@@ -48,4 +51,9 @@ export function getAgentByAlias(
 ): AgentEntry | undefined {
   const k = normalizeAlias(alias);
   return agents.find((a) => a.alias === k);
+}
+
+/** HL subaccount cüzdanı — önce hlWallet, yoksa walletAddress. */
+export function getHlWallet(agent: AgentEntry): string | undefined {
+  return agent.hlWallet?.trim() || agent.walletAddress?.trim();
 }

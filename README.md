@@ -23,9 +23,11 @@ Kişisel kullanım: açık pozisyonlar, leaderboard özeti, ACP ile pozisyon aç
 
 ```bash
 cp .env.example .env.local
-# değerleri doldur
+# değerleri doldur (AGENTS_JSON = Telegram bot ile aynı JSON)
 npm run dev
 ```
+
+Şablon: repoda `degen-dashboard/.env.example`. Agent listesi ve panel şifreleri için ayrıca `telegram-degen-bot/ORTAM_VE_DASHBOARD.md`.
 
 **Hata: `Cannot find module './627.js'` / `./638.js` vb.** — bozuk `.next` (ve bazen `node_modules/.cache`). Önce **çalışan `npm run dev` sürecini tamamen kapat**, sonra:
 
