@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
+import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
 import { createAcpClient, jobPerpOpen } from "@/lib/acp";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
@@ -65,6 +65,7 @@ export async function POST(req: Request) {
 
   try {
     const client = createAcpClient(agent.apiKey);
+    const hlUser = getHlWallet(agent);
     const data = await jobPerpOpen(client, {
       pair,
       side,
@@ -74,6 +75,7 @@ export async function POST(req: Request) {
       takeProfit,
       orderType,
       limitPrice,
+      hyperliquidUser: hlUser,
     });
     
     // Redis'e activity log ekle

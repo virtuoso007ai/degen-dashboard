@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
+import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
 import { createAcpClient, jobPerpModify } from "@/lib/acp";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
@@ -57,12 +57,17 @@ export async function POST(req: Request) {
 
   try {
     const client = createAcpClient(agent.apiKey);
-    const data = await jobPerpModify(client, {
-      pair,
-      stopLoss,
-      takeProfit,
-      leverage,
-    });
+    const hlUser = getHlWallet(agent);
+    const data = await jobPerpModify(
+      client,
+      {
+        pair,
+        stopLoss,
+        takeProfit,
+        leverage,
+      },
+      hlUser
+    );
 
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
