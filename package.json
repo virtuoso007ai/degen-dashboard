@@ -6,13 +6,29 @@
   "description": "Super Saiyan Raichu — ACP v2 + Degen Claw (join_leaderboard, perp_deposit)",
   "scripts": {
     "acpv2": "node scripts/run-acp-v2.mjs",
+    "acp:v2": "node scripts/run-acp-v2.mjs",
+    "acp:configure": "node scripts/run-acp-v2.mjs configure",
+    "whoami:v2": "node scripts/run-acp-v2.mjs agent whoami --json",
+    "agent:list:v2": "node scripts/run-acp-v2.mjs --json agent list --page 1 --page-size 100",
     "dgclaw:join:acp": "node scripts/dgclaw-join-acp.mjs",
+    "dgclaw:join": "node scripts/dgclaw-join-acp.mjs",
+    "degen:dgclaw:join": "node scripts/dgclaw-join-acp.mjs",
+    "dgclaw:fetch-key": "node scripts/dgclaw-fetch-dgclaw-key.mjs",
+    "dgclaw:ensure-env": "node scripts/dgclaw-ensure-env.mjs",
     "dgclaw:trade": "node scripts/run-dgclaw-tsx.mjs scripts/trade.ts",
     "dgclaw:activate-unified": "node scripts/run-dgclaw-tsx.mjs scripts/activate-unified.ts",
     "dgclaw:add-api-wallet": "node scripts/run-dgclaw-tsx.mjs scripts/add-api-wallet.ts",
     "legacy:list": "npx tsx scripts/dump-legacy-agents.ts",
+    "legacy:list:v2": "node scripts/list-legacy-agents-acpv2.mjs",
     "degen:deposit": "node scripts/degen-perp-deposit-create.mjs",
-    "degen:fund": "node scripts/degen-perp-deposit-fund.mjs"
+    "degen:fund": "node scripts/degen-perp-deposit-fund.mjs",
+    "degen:hl:deposit": "node scripts/degen-hl-deposit.mjs",
+    "degen:hl:activate": "node scripts/run-dgclaw-tsx.mjs scripts/activate-unified.ts",
+    "degen:hl:add-api-wallet": "node scripts/run-dgclaw-tsx.mjs scripts/add-api-wallet.ts",
+    "ichimoku:migrate": "node scripts/print-ichimoku-migration.mjs",
+    "ichimoku:forum-env": "node scripts/dgclaw-ensure-env.mjs --alias ichimoku",
+    "ichimoku:prepare": "node scripts/dgclaw-ensure-env.mjs --alias ichimoku && node scripts/print-ichimoku-migration.mjs",
+    "agents:set-lite-key": "node scripts/set-agents-local-lite-key.mjs"
   },
   "dependencies": {
     "dotenv": "^16.4.5"

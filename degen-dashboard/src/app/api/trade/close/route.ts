@@ -1,5 +1,5 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
+import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
 import { createAcpClient, jobPerpClose } from "@/lib/acp";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
@@ -46,7 +46,7 @@ export async function POST(req: Request) {
     // Get position info before closing (for forum post)
     let positionInfo: any = null;
     try {
-      const walletAddr = agent.walletAddress || "";
+      const walletAddr = getHlWallet(agent) || agent.walletAddress || "";
       if (walletAddr) {
         const positions = await fetchDgPositions(walletAddr);
         positionInfo = positions.find((p) => p.pair?.toUpperCase() === pair.toUpperCase());
@@ -55,7 +55,8 @@ export async function POST(req: Request) {
       console.warn("[Close] Could not fetch position info:", e);
     }
     
-    const data = await jobPerpClose(client, pair);
+    const hlUser = getHlWallet(agent);
+    const data = await jobPerpClose(client, pair, hlUser);
     
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
