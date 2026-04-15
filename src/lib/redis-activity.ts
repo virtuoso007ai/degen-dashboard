@@ -43,9 +43,14 @@ const MAX_ENTRIES = 200;
  * Activity log'a yeni entry ekle (Redis'e LPUSH + LTRIM)
  */
 export async function appendActivity(entry: ActivityEntry): Promise<void> {
-  const client = getRedisClient();
-  await client.lpush(ACTIVITY_KEY, JSON.stringify(entry));
-  await client.ltrim(ACTIVITY_KEY, 0, MAX_ENTRIES - 1);
+  try {
+    const client = getRedisClient();
+    await client.lpush(ACTIVITY_KEY, JSON.stringify(entry));
+    await client.ltrim(ACTIVITY_KEY, 0, MAX_ENTRIES - 1);
+  } catch (e) {
+    const msg = e instanceof Error ? e.message : String(e);
+    console.warn("[activity] Redis yazılamadı (HL işlemi yine de tamamlanmış olabilir):", msg);
+  }
 }
 
 /**

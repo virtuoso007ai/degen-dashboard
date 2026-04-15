@@ -1,12 +1,12 @@
 # Degen Panel (Vercel)
 
-Kişisel kullanım: açık pozisyonlar, leaderboard özeti, ACP ile pozisyon aç/kapa. **API anahtarları yalnızca Vercel ortam değişkenlerinde** tutulur; tarayıcıya gitmez.
+Kişisel kullanım: açık pozisyonlar, leaderboard özeti, **Hyperliquid v2 doğrudan imza** (sunucuda `hlDirectOpen` / `hlDirectClose` — ACP `perp_trade` job yok). **API anahtarları yalnızca Vercel ortam değişkenlerinde** tutulur; tarayıcıya gitmez.
 
-**Arayüz:** Sekmeler — **Özet** (istatistik + form), **Pozisyonlar** (kartlar, long/short renk çubuğu, modify, deposit/withdraw), **İşlemler** (bu tarayıcıda saklanan aç/kapa logu), **Sıralama** (leaderboard). **İşlemler** zincir geçmişi değildir; yalnızca panelden attığın job kayıtları (`localStorage`).
+**Arayüz:** Sekmeler — **Özet** (istatistik + form), **Pozisyonlar** (kartlar, modify), **Açık limitler**, **İşlemler** (Upstash Redis’teki panel aktivite logu; yoksa `/api/activity` hata verir), **Sıralama**. Log zincir geçmişi değildir.
 
 **Özellikler:**
-- **Pozisyon yönetimi**: Market ve limit emir ile açma, kapatma, modify (TP/SL/kaldıraç)
-- **Bakiye operasyonları**: Deposit ve withdraw
+- **Pozisyon yönetimi (HL v2)**: Market ve limit emir, kapatma, modify (TP/SL/kaldıraç), toplu iptal
+- **Marj**: Panelden ACP deposit/withdraw kaldırıldı; marj için HL / cüzdan kullan
 - **Detaylı görünüm**: Liquidation price, margin, unrealized PnL
 - **Onay dialog'ları**: Her işlem için onay + timed toast notifications
 - **Mobil uyumlu**: Responsive grid layout (mobil, tablet, desktop)
@@ -16,8 +16,10 @@ Kişisel kullanım: açık pozisyonlar, leaderboard özeti, ACP ile pozisyon aç
 | Değişken | Açıklama |
 |----------|----------|
 | `AGENTS_JSON` | Telegram bot’taki ile **aynı** tek satır JSON |
+| `HL_API_WALLET_KEY_<ALIAS>` | Her trade agent için (Telegram ile aynı isimler) |
 | `DASHBOARD_PASSWORD` | Giriş şifresi |
 | `DASHBOARD_SESSION_SECRET` | Rastgele uzun string (oturum çerezi imzası) |
+| `UPSTASH_REDIS_*` | İşlem logu; yoksa trade çalışır ama aktivite kaydı patlayabilir |
 
 `.env.local` ile lokal deneme:
 
