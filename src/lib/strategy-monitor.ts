@@ -6,7 +6,7 @@
 import { getAllEnabledStrategies, updateStrategy } from "./indicators/storage";
 import { fetchCandles } from "./indicators/market-data";
 import { generateSignal } from "./indicators/engine";
-import { createAcpClient, jobPerpOpen, jobPerpClose } from "./acp";
+import { hlDirectOpen } from "./hlDirectTrade";
 import { parseAgentsFromEnv, getAgentByAlias } from "./agents";
 import { postToForum } from "./forum";
 import { formatPersonalizedTradeOpen } from "./agent-personalities";
@@ -18,7 +18,6 @@ interface ExecutionResult {
   success: boolean;
   error?: string;
   signal?: any;
-  jobId?: string;
 }
 
 interface MonitorHealth {
@@ -171,29 +170,21 @@ async function executeStrategy(
       signal.signal === "buy" ? "long" : "short"
     );
 
-    // Execute trade
-    const client = createAcpClient(agent.apiKey);
-    let tradeResult;
-    
+    let tradeResult: unknown;
+
     try {
       console.log(`[executeStrategy] ${strategyId}: Opening ${signal.signal === "buy" ? "LONG" : "SHORT"} ${pair} (size: $${strategy.positionSizeUSD}, lev: ${strategy.leverage}x, TP: ${takeProfit}, SL: ${stopLoss})`);
-      
-      tradeResult = await jobPerpOpen(client, {
+
+      tradeResult = await hlDirectOpen(agent, {
         pair,
         side: signal.signal === "buy" ? "long" : "short",
-        size: strategy.positionSizeUSD.toString(),
+        sizeUsd: strategy.positionSizeUSD,
         leverage: strategy.leverage,
         takeProfit,
         stopLoss,
       });
-      
-      console.log(`[executeStrategy] ${strategyId}: ACP Response:`, JSON.stringify(tradeResult, null, 2));
-      
-      if (!tradeResult?.data?.jobId) {
-        console.error(`[executeStrategy] ${strategyId}: ❌ No jobId in response! Full response:`, tradeResult);
-        throw new Error(`ACP API returned no jobId. Response: ${JSON.stringify(tradeResult)}`);
-      }
-      
+
+      console.log(`[executeStrategy] ${strategyId}: HL v2 response:`, JSON.stringify(tradeResult, null, 2));
     } catch (tradeError) {
       console.error(`[executeStrategy] ${strategyId}: Trade error:`, tradeError);
       if (retryCount < MAX_RETRIES) {
@@ -214,12 +205,12 @@ async function executeStrategy(
       side: signal.signal === "buy" ? "long" : "short",
       size: strategy.positionSizeUSD.toString(),
       leverage: strategy.leverage,
-      ok: !!tradeResult?.data?.jobId,
-      detail: `Strategy: ${strategy.strategyType} | Signal: ${signal.reason} | Strength: ${signal.strength}% | ACP Response: ${JSON.stringify(tradeResult || {}).slice(0, 500)}`,
+      ok: true,
+      detail: `Strategy: ${strategy.strategyType} | Signal: ${signal.reason} | Strength: ${signal.strength}% | HL v2: ${JSON.stringify(tradeResult || {}).slice(0, 500)}`,
     });
 
     // Post to forum (non-blocking)
-    if (tradeResult?.data?.jobId && agent.forumApiKey) {
+    if (agent.forumApiKey) {
       const agentId = getAgentForumId(strategy.agentAlias);
       const threadId = getAgentSignalsThreadId(strategy.agentAlias);
       
@@ -252,7 +243,6 @@ async function executeStrategy(
       strategyId,
       success: true,
       signal,
-      jobId: tradeResult?.data?.jobId,
     };
 
   } catch (error) {

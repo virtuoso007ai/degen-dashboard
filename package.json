@@ -11,11 +11,13 @@
     "clean": "node scripts/clean.mjs"
   },
   "dependencies": {
+    "@nktkas/hyperliquid": "^0.32.2",
     "@upstash/redis": "^1.37.0",
     "axios": "^1.14.0",
     "next": "^16.2.2",
     "react": "^19.0.0",
-    "react-dom": "^19.0.0"
+    "react-dom": "^19.0.0",
+    "viem": "^2.21.0"
   },
   "devDependencies": {
     "@eslint/eslintrc": "^3",

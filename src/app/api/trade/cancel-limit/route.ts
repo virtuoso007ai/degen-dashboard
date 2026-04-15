@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
-import { createAcpClient, jobPerpCancelLimit } from "@/lib/acp";
+import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
+import { hlDirectCancelLimit } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
 
@@ -25,6 +25,11 @@ export async function POST(req: Request) {
     );
   }
 
+  const oidNum = typeof oid === "string" ? parseInt(oid, 10) : Number(oid);
+  if (!Number.isFinite(oidNum)) {
+    return NextResponse.json({ error: "oid sayı olmalı" }, { status: 400 });
+  }
+
   let agents;
   try {
     agents = parseAgentsFromEnv();
@@ -41,9 +46,7 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = createAcpClient(agent.apiKey);
-    const hlUser = getHlWallet(agent);
-    const data = await jobPerpCancelLimit(client, pair, oid, hlUser);
+    const data = await hlDirectCancelLimit(agent, pair, oidNum);
 
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
@@ -51,8 +54,8 @@ export async function POST(req: Request) {
       kind: "cancel_limit",
       alias,
       pair,
-      ok: !!(data as { data?: { jobId?: number } })?.data?.jobId,
-      detail: JSON.stringify({ oid: String(oid), ...data }).slice(0, 800),
+      ok: true,
+      detail: JSON.stringify({ oid: String(oid), data }).slice(0, 800),
     });
 
     return NextResponse.json(data);

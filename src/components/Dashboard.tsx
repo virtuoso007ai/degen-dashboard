@@ -9,7 +9,14 @@ import StrategyList from "./StrategyList";
 type ActivityEntry = {
   id: string;
   at: string;
-  kind: "open" | "close" | "modify" | "deposit" | "withdraw" | "cancel_limit";
+  kind:
+    | "open"
+    | "close"
+    | "modify"
+    | "deposit"
+    | "withdraw"
+    | "cancel_limit"
+    | "cancel_open_orders";
   alias: string;
   pair?: string;
   side?: string;
@@ -118,6 +125,7 @@ const KIND_LABELS: Record<string, { text: string; cls: string }> = {
   deposit: { text: "DEPOSIT", cls: "text-sky-400" },
   withdraw: { text: "WITHDRAW", cls: "text-violet-400" },
   cancel_limit: { text: "CANCEL LMT", cls: "text-orange-400" },
+  cancel_open_orders: { text: "CANCEL ALL", cls: "text-orange-300" },
 };
 
 async function apiPost(url: string, body: unknown) {
@@ -153,6 +161,7 @@ export function Dashboard() {
   const [openTP, setOpenTP] = useState("");
   const [orderType, setOrderType] = useState<"market" | "limit">("market");
   const [limitPrice, setLimitPrice] = useState("");
+  const [openForAllAgents, setOpenForAllAgents] = useState(false);
   const [tradeMsg, setTradeMsg] = useState("");
 
   // confirmation dialog
@@ -176,17 +185,12 @@ export function Dashboard() {
   const [modLev, setModLev] = useState("");
   const [modMsg, setModMsg] = useState("");
 
-  // deposit/withdraw
-  const [dwAlias, setDwAlias] = useState("");
-  const [dwAmount, setDwAmount] = useState("");
-  const [dwRecipient, setDwRecipient] = useState("");
-  const [dwMsg, setDwMsg] = useState("");
-
   // strategy creator modal
   const [showStrategyCreator, setShowStrategyCreator] = useState(false);
 
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [cancellingOrderKey, setCancellingOrderKey] = useState<string | null>(null);
+  const [cancellingAllPair, setCancellingAllPair] = useState(false);
   
   const loadActivity = useCallback(async () => {
     try {
@@ -250,7 +254,6 @@ export function Dashboard() {
   useEffect(() => {
     if (!snap?.agents.length) return;
     setAlias((prev) => prev || snap.agents[0].alias);
-    setDwAlias((prev) => prev || snap.agents[0].alias);
   }, [snap]);
 
   /* ---------- actions ---------- */
@@ -269,30 +272,62 @@ export function Dashboard() {
   async function openPos(e: React.FormEvent) {
     e.preventDefault();
     setTradeMsg("");
-    const payload: Record<string, unknown> = { alias, pair, side, size, leverage: lev };
-    if (openSL.trim()) payload.stopLoss = openSL.trim();
-    if (openTP.trim()) payload.takeProfit = openTP.trim();
-    if (orderType === "limit") { payload.orderType = "limit"; if (limitPrice.trim()) payload.limitPrice = limitPrice.trim(); }
+    const base: Record<string, unknown> = { pair, side, size, leverage: lev };
+    if (openSL.trim()) base.stopLoss = openSL.trim();
+    if (openTP.trim()) base.takeProfit = openTP.trim();
+    if (orderType === "limit") {
+      base.orderType = "limit";
+      if (limitPrice.trim()) base.limitPrice = limitPrice.trim();
+    }
 
-    const details = [
-      `Agent: ${alias}`,
-      `Parite: ${pair} ${side.toUpperCase()}`,
-      `Size: ${size} | Kaldıraç: ${lev}x`,
-    ];
+    const details = openForAllAgents
+      ? [
+          `Tüm agentlar (${aliases.length}): ${aliases.join(", ")}`,
+          `Parite: ${pair} ${side.toUpperCase()}`,
+          `Size: ${size} USDC notional | Kaldıraç: ${lev}x`,
+        ]
+      : [
+          `Agent: ${alias}`,
+          `Parite: ${pair} ${side.toUpperCase()}`,
+          `Size: ${size} USDC notional | Kaldıraç: ${lev}x`,
+        ];
     if (openSL.trim()) details.push(`Stop Loss: ${openSL}`);
     if (openTP.trim()) details.push(`Take Profit: ${openTP}`);
     if (orderType === "limit") details.push(`Limit: ${limitPrice || "—"}`);
 
     setConfirmAction({
-      title: "Pozisyon açılsın mı?",
+      title: openForAllAgents ? "Tüm agentlara aynı emir (HL v2)" : "Pozisyon açılsın mı?",
       details,
       onConfirm: async () => {
-        const { ok, data } = await apiPost("/api/trade/open", payload);
-        const msg = ok ? "Job oluşturuldu" : `Hata: ${data.error ?? "?"}`;
-        setTradeMsg(msg);
-        showToast(ok ? "success" : "error", msg);
-        bumpLog();
-        if (ok) loadSnap();
+        if (openForAllAgents) {
+          const { ok, data } = await apiPost("/api/trade/open-multi", { ...base, allAgents: true });
+          const results = (data as { results?: { alias: string; ok: boolean; error?: string }[] })?.results;
+          const summary = (data as { summary?: { ok: number; total: number } })?.summary;
+          let msg: string;
+          if (!ok) {
+            msg = `Hata: ${(data as { error?: string }).error ?? "?"}`;
+          } else if (results && summary) {
+            const bad = results.filter((r) => !r.ok);
+            msg =
+              bad.length === 0
+                ? `${summary.ok}/${summary.total} agent: emir gönderildi (HL v2)`
+                : `${summary.ok}/${summary.total} OK; hata: ${bad.map((b) => `${b.alias}${b.error ? ` (${b.error.slice(0, 80)})` : ""}`).join("; ")}`;
+          } else {
+            msg = "Yanıt beklenmedik";
+          }
+          setTradeMsg(msg);
+          showToast(summary && summary.ok > 0 ? "success" : "error", msg);
+          bumpLog();
+          if (summary && summary.ok > 0) loadSnap();
+        } else {
+          const payload = { ...base, alias };
+          const { ok, data } = await apiPost("/api/trade/open", payload);
+          const msg = ok ? "Emir gönderildi (HL v2)" : `Hata: ${(data as { error?: string }).error ?? "?"}`;
+          setTradeMsg(msg);
+          showToast(ok ? "success" : "error", msg);
+          bumpLog();
+          if (ok) loadSnap();
+        }
       },
     });
   }
@@ -304,7 +339,7 @@ export function Dashboard() {
       details: [`Agent: ${a}`, `Parite: ${p}`],
       onConfirm: async () => {
         const { ok, data } = await apiPost("/api/trade/close", { alias: a, pair: p });
-        const msg = ok ? "Kapatma job gönderildi" : `Kapatma: ${data.error ?? "?"}`;
+        const msg = ok ? "Kapatma gönderildi (HL v2)" : `Kapatma: ${data.error ?? "?"}`;
         setTradeMsg(msg);
         showToast(ok ? "success" : "error", msg);
         bumpLog();
@@ -332,49 +367,11 @@ export function Dashboard() {
       details,
       onConfirm: async () => {
         const { ok, data } = await apiPost("/api/trade/modify", body);
-        const msg = ok ? "Modify job gönderildi" : `Modify: ${data.error ?? "?"}`;
+        const msg = ok ? "Modify gönderildi (HL v2)" : `Modify: ${data.error ?? "?"}`;
         setModMsg(msg);
         showToast(ok ? "success" : "error", msg);
         bumpLog();
         if (ok) { setModifyKey(null); setModSL(""); setModTP(""); setModLev(""); loadSnap(); }
-      },
-    });
-  }
-
-  async function depositAction(e: React.FormEvent) {
-    e.preventDefault();
-    setDwMsg("");
-    setConfirmAction({
-      title: "Deposit yapılsın mı?",
-      details: [`Agent: ${dwAlias}`, `Miktar: ${dwAmount} USDC`],
-      onConfirm: async () => {
-        const { ok, data } = await apiPost("/api/trade/deposit", { alias: dwAlias, amount: dwAmount });
-        const msg = ok ? `Deposit job: ${JSON.stringify(data).slice(0, 200)}` : `Hata: ${data.error ?? "?"}`;
-        setDwMsg(msg);
-        showToast(ok ? "success" : "error", msg);
-        bumpLog();
-        if (ok) setDwAmount("");
-      },
-    });
-  }
-
-  async function withdrawAction(e: React.FormEvent) {
-    e.preventDefault();
-    setDwMsg("");
-    const body: Record<string, string> = { alias: dwAlias, amount: dwAmount };
-    if (dwRecipient.trim()) body.recipient = dwRecipient.trim();
-    const details = [`Agent: ${dwAlias}`, `Miktar: ${dwAmount} USDC`];
-    if (dwRecipient.trim()) details.push(`Alıcı: ${dwRecipient}`);
-    setConfirmAction({
-      title: "Withdraw yapılsın mı?",
-      details,
-      onConfirm: async () => {
-        const { ok, data } = await apiPost("/api/trade/withdraw", body);
-        const msg = ok ? `Withdraw job: ${JSON.stringify(data).slice(0, 200)}` : `Hata: ${data.error ?? "?"}`;
-        setDwMsg(msg);
-        showToast(ok ? "success" : "error", msg);
-        bumpLog();
-        if (ok) { setDwAmount(""); setDwRecipient(""); }
       },
     });
   }
@@ -508,10 +505,25 @@ export function Dashboard() {
               <h2 className="text-sm font-semibold text-amber-200/90 mb-4">Yeni pozisyon</h2>
               <form onSubmit={openPos} className="space-y-3">
                 <label className="block text-xs text-zinc-500">Agent
-                  <select className={`mt-1 w-full ${selectCls}`} value={alias} onChange={(e) => setAlias(e.target.value)} required>
+                  <select
+                    className={`mt-1 w-full ${selectCls}`}
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    required={!openForAllAgents}
+                    disabled={openForAllAgents}
+                  >
                     <option value="">—</option>
                     {aliases.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
+                </label>
+                <label className="flex items-center gap-2 text-xs text-zinc-400 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-zinc-600"
+                    checked={openForAllAgents}
+                    onChange={(e) => setOpenForAllAgents(e.target.checked)}
+                  />
+                  Tüm agentlara aynı emir (her birinde hlApiWalletKey gerekli)
                 </label>
                 <label className="block text-xs text-zinc-500">Parite
                   <input className={`mt-1 w-full ${inputCls} uppercase`} value={pair} onChange={(e) => setPair(e.target.value)} />
@@ -522,8 +534,8 @@ export function Dashboard() {
                       <option value="long">long</option><option value="short">short</option>
                     </select>
                   </label>
-                  <label className="text-xs text-zinc-500">Size
-                    <input className={`mt-1 w-full ${inputCls}`} value={size} onChange={(e) => setSize(e.target.value)} />
+                  <label className="text-xs text-zinc-500">Size (USDC)
+                    <input className={`mt-1 w-full ${inputCls}`} value={size} onChange={(e) => setSize(e.target.value)} title="USDC notional" />
                   </label>
                   <label className="text-xs text-zinc-500">Kal.
                     <input type="number" min={1} className={`mt-1 w-full ${inputCls}`} value={lev} onChange={(e) => setLev(Number(e.target.value))} />
@@ -574,14 +586,20 @@ export function Dashboard() {
               <h2 className="text-sm font-semibold text-zinc-300 mb-3">Hızlı işlem</h2>
               <form onSubmit={openPos} className="space-y-2">
                 <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-6 gap-2">
-                  <select className={selectCls} value={alias} onChange={(e) => setAlias(e.target.value)} required>
+                  <select
+                    className={selectCls}
+                    value={alias}
+                    onChange={(e) => setAlias(e.target.value)}
+                    required={!openForAllAgents}
+                    disabled={openForAllAgents}
+                  >
                     {aliases.map((a) => <option key={a} value={a}>{a}</option>)}
                   </select>
                   <input className={`${inputCls} uppercase`} value={pair} onChange={(e) => setPair(e.target.value)} placeholder="Parite" />
                   <select className={selectCls} value={side} onChange={(e) => setSide(e.target.value as "long" | "short")}>
                     <option value="long">long</option><option value="short">short</option>
                   </select>
-                  <input className={inputCls} value={size} onChange={(e) => setSize(e.target.value)} placeholder="Size" />
+                  <input className={inputCls} value={size} onChange={(e) => setSize(e.target.value)} placeholder="USDC notional" title="USDC notional" />
                   <input type="number" min={1} className={inputCls} value={lev} onChange={(e) => setLev(Number(e.target.value))} placeholder="Lev" />
                   <button type="submit" className={`${btnAmber} md:col-span-1`}>Aç</button>
                 </div>
@@ -595,23 +613,26 @@ export function Dashboard() {
                     <input className={inputCls} placeholder="Limit Fiyat" value={limitPrice} onChange={(e) => setLimitPrice(e.target.value)} />
                   )}
                 </div>
+                <label className="flex items-center gap-2 text-xs text-zinc-500 cursor-pointer select-none">
+                  <input
+                    type="checkbox"
+                    className="rounded border-zinc-600"
+                    checked={openForAllAgents}
+                    onChange={(e) => setOpenForAllAgents(e.target.checked)}
+                  />
+                  Tüm agentlara aynı emir
+                </label>
               </form>
               {tradeMsg && <p className="mt-2 text-xs text-zinc-500">{tradeMsg}</p>}
             </div>
 
-            {/* deposit / withdraw */}
-            <div className="mb-6 rounded-2xl border border-sky-500/20 bg-zinc-900/30 p-4">
-              <h2 className="text-sm font-semibold text-sky-200/90 mb-3">Deposit / Withdraw</h2>
-              <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-5 gap-2">
-                <select className={selectCls} value={dwAlias} onChange={(e) => setDwAlias(e.target.value)}>
-                  {aliases.map((a) => <option key={a} value={a}>{a}</option>)}
-                </select>
-                <input className={inputCls} placeholder="Miktar USDC" value={dwAmount} onChange={(e) => setDwAmount(e.target.value)} />
-                <input className={`${inputCls} text-xs`} placeholder="Recipient (opsiyonel)" value={dwRecipient} onChange={(e) => setDwRecipient(e.target.value)} />
-                <button type="button" onClick={() => depositAction({ preventDefault: () => {} } as React.FormEvent)} className="rounded-xl bg-sky-600 px-4 py-2 text-sm font-bold text-white hover:bg-sky-500">Deposit</button>
-                <button type="button" onClick={() => withdrawAction({ preventDefault: () => {} } as React.FormEvent)} className="rounded-xl bg-violet-600 px-4 py-2 text-sm font-bold text-white hover:bg-violet-500">Withdraw</button>
-              </div>
-              {dwMsg && <p className="mt-2 text-xs text-zinc-400">{dwMsg}</p>}
+            <div className="mb-6 rounded-2xl border border-zinc-700/80 bg-zinc-900/40 p-4">
+              <h2 className="text-sm font-semibold text-zinc-300 mb-2">Marj: deposit / withdraw</h2>
+              <p className="text-xs text-zinc-500 leading-relaxed">
+                Panel HL v2 ile sadece perp işlem yapıyor; ACP <code className="text-zinc-400">perp_deposit</code> /{" "}
+                <code className="text-zinc-400">perp_withdraw</code> kaldırıldı. Marj için{" "}
+                <code className="text-zinc-400">acp-cli</code>, Hyperliquid arayüzü veya cüzdan transferi kullanın.
+              </p>
             </div>
 
             {/* filters */}
@@ -789,8 +810,52 @@ export function Dashboard() {
         {mainTab === "acik-limitler" && (
           <div className="rounded-2xl border border-zinc-800/80 bg-zinc-900/30 overflow-hidden">
             <div className="flex flex-wrap items-center justify-between gap-3 border-b border-zinc-800 px-4 py-3 bg-zinc-950/50">
-              <p className="text-sm text-zinc-400">Açık limit emirleri (Hyperliquid Testnet).</p>
-              <button type="button" onClick={loadOpenOrders} className="text-xs text-amber-400 hover:text-amber-300">Yenile</button>
+              <p className="text-sm text-zinc-400">
+                Açık limit emirleri — üstteki trade formundaki <span className="font-mono text-zinc-300">agent</span> ve{" "}
+                <span className="font-mono text-zinc-300">parite</span> ile aynı ağ (<code className="text-zinc-500">HYPERLIQUID_INFO_URL</code> / varsayılan mainnet).
+              </p>
+              <div className="flex flex-wrap items-center gap-2">
+                <button
+                  type="button"
+                  disabled={cancellingAllPair || !alias || !pair.trim()}
+                  onClick={async () => {
+                    const p = pair.trim().toUpperCase();
+                    if (!alias || !p) return;
+                    setCancellingAllPair(true);
+                    try {
+                      const { ok, data } = await apiPost("/api/trade/cancel-open-orders", {
+                        alias,
+                        pair: p,
+                      });
+                      const err = (data as { error?: string })?.error;
+                      const res = data as { cancelled?: number; oids?: number[]; errors?: string[] };
+                      if (ok && !err) {
+                        const n = res.cancelled ?? 0;
+                        showToast(
+                          "success",
+                          n > 0
+                            ? `${n} emir iptal edildi (${alias} · ${p})`
+                            : `Açık emir yok (${alias} · ${p})`
+                        );
+                        bumpLog();
+                        await loadOpenOrders();
+                      } else {
+                        showToast("error", err || "Toplu iptal başarısız");
+                      }
+                    } catch (e) {
+                      showToast("error", e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setCancellingAllPair(false);
+                    }
+                  }}
+                  className="text-xs text-orange-300 hover:text-orange-200 border border-orange-500/35 px-2 py-1 rounded disabled:opacity-40"
+                >
+                  {cancellingAllPair ? "…" : `Tümünü iptal (${alias || "—"} · ${pair.trim().toUpperCase() || "—"})`}
+                </button>
+                <button type="button" onClick={loadOpenOrders} className="text-xs text-amber-400 hover:text-amber-300">
+                  Yenile
+                </button>
+              </div>
             </div>
             {openOrdersErr && <p className="px-4 py-3 text-red-400 text-sm">{openOrdersErr}</p>}
             <div className="overflow-x-auto">
@@ -838,10 +903,9 @@ export function Dashboard() {
                                   pair: order.coin,
                                   oid: order.oid,
                                 });
-                                const jobId = (data as { data?: { jobId?: number } })?.data?.jobId;
                                 const err = (data as { error?: string })?.error;
                                 if (ok) {
-                                  showToast("success", `cancel_limit job ${jobId ?? "?"}`);
+                                  showToast("success", "Limit emri iptal edildi (HL v2)");
                                   bumpLog();
                                   await loadOpenOrders();
                                 } else {

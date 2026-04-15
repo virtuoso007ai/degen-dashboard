@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
 import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
-import { hlDirectModify } from "@/lib/hlDirectTrade";
+import { hlDirectCancelAllOpenOrdersForPair } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
 
@@ -8,13 +8,7 @@ export async function POST(req: Request) {
   const unauthorized = await requireSession();
   if (unauthorized) return unauthorized;
 
-  let body: {
-    alias?: string;
-    pair?: string;
-    stopLoss?: string;
-    takeProfit?: string;
-    leverage?: number;
-  };
+  let body: { alias?: string; pair?: string };
   try {
     body = await req.json();
   } catch {
@@ -23,19 +17,9 @@ export async function POST(req: Request) {
 
   const alias = body.alias?.trim();
   const pair = body.pair?.trim().toUpperCase();
-  const stopLoss = body.stopLoss?.trim() || undefined;
-  const takeProfit = body.takeProfit?.trim() || undefined;
-  const leverage = body.leverage;
-
   if (!alias || !pair) {
     return NextResponse.json(
       { error: "alias ve pair gerekli" },
-      { status: 400 }
-    );
-  }
-  if (!stopLoss && !takeProfit && leverage == null) {
-    return NextResponse.json(
-      { error: "stopLoss, takeProfit veya leverage'dan en az biri gerekli" },
       { status: 400 }
     );
   }
@@ -56,24 +40,19 @@ export async function POST(req: Request) {
   }
 
   try {
-    const data = await hlDirectModify(agent, {
-      pair,
-      stopLoss,
-      takeProfit,
-      leverage,
-    });
+    const result = await hlDirectCancelAllOpenOrdersForPair(agent, pair);
 
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
-      kind: "modify",
+      kind: "cancel_open_orders",
       alias,
       pair,
-      ok: true,
-      detail: JSON.stringify(data).slice(0, 800),
+      ok: result.errors.length === 0 || result.cancelled > 0,
+      detail: JSON.stringify(result).slice(0, 800),
     });
 
-    return NextResponse.json(data);
+    return NextResponse.json(result);
   } catch (e) {
     const msg =
       e && typeof e === "object" && "message" in e
@@ -83,7 +62,7 @@ export async function POST(req: Request) {
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
-      kind: "modify",
+      kind: "cancel_open_orders",
       alias: alias!,
       pair,
       ok: false,

@@ -19,7 +19,14 @@ export function getRedisClient(): Redis {
 export type ActivityEntry = {
   id: string;
   at: string;
-  kind: "open" | "close" | "modify" | "deposit" | "withdraw" | "cancel_limit";
+  kind:
+    | "open"
+    | "close"
+    | "modify"
+    | "deposit"
+    | "withdraw"
+    | "cancel_limit"
+    | "cancel_open_orders";
   alias: string;
   pair?: string;
   side?: string;

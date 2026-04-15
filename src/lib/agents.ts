@@ -1,10 +1,15 @@
+import { applyHlTradeEnvToAgent } from "./hlAgentSecretsFromEnv";
+
 export type AgentEntry = {
   alias: string;
-  apiKey: string;
+  /** Opsiyonel — /acp/me ile cüzdan; HL-only için walletAddress/hlWallet yeter */
+  apiKey?: string;
   forumApiKey?: string;
   label?: string;
   walletAddress?: string;
   hlWallet?: string;
+  /** HL API cüzdanı private key — repoya commit etme */
+  hlApiWalletKey?: string;
 };
 
 function normalizeAlias(s: string): string {
@@ -27,22 +32,26 @@ export function parseAgentsFromEnv(): AgentEntry[] {
     const o = row as Record<string, unknown>;
     const alias = normalizeAlias(String(o.alias ?? ""));
     const apiKey = String(o.apiKey ?? "").trim();
-    if (!alias || !apiKey) continue;
+    if (!alias) continue;
     if (seen.has(alias)) throw new Error(`Yinelenen alias: ${alias}`);
     seen.add(alias);
     out.push({
       alias,
-      apiKey,
+      apiKey: apiKey || undefined,
       forumApiKey: o.forumApiKey != null ? String(o.forumApiKey).trim() : undefined,
       label: o.label != null ? String(o.label).trim() : undefined,
       walletAddress:
         o.walletAddress != null ? String(o.walletAddress).trim() : undefined,
       hlWallet:
         o.hlWallet != null ? String(o.hlWallet).trim() : undefined,
+      hlApiWalletKey:
+        o.hlApiWalletKey != null ? String(o.hlApiWalletKey).trim() : undefined,
     });
   }
   if (out.length === 0) throw new Error("Geçerli agent yok");
-  return out.sort((a, b) => a.alias.localeCompare(b.alias));
+  const sole = out.length === 1;
+  const merged = out.map((a) => applyHlTradeEnvToAgent(a, sole));
+  return merged.sort((a, b) => a.alias.localeCompare(b.alias));
 }
 
 export function getAgentByAlias(

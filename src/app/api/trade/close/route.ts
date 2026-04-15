@@ -1,12 +1,12 @@
 import { NextResponse } from "next/server";
 import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
-import { createAcpClient, jobPerpClose } from "@/lib/acp";
+import { hlDirectClose } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
 import { postToForum } from "@/lib/forum";
 import { formatPersonalizedTradeClose } from "@/lib/agent-personalities";
 import { getAgentForumId, getAgentSignalsThreadId } from "@/lib/agent-forum-ids";
-import { fetchDgPositions } from "@/lib/degen";
+import { fetchDgPositions, type DgPositionRow } from "@/lib/degen";
 
 export async function POST(req: Request) {
   const unauthorized = await requireSession();
@@ -41,64 +41,63 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = createAcpClient(agent.apiKey);
-    
-    // Get position info before closing (for forum post)
-    let positionInfo: any = null;
+    let positionInfo: DgPositionRow | null = null;
     try {
       const walletAddr = getHlWallet(agent) || agent.walletAddress || "";
       if (walletAddr) {
         const positions = await fetchDgPositions(walletAddr);
-        positionInfo = positions.find((p) => p.pair?.toUpperCase() === pair.toUpperCase());
+        positionInfo =
+          positions.find((p) => p.pair?.toUpperCase() === pair.toUpperCase()) ?? null;
       }
     } catch (e) {
       console.warn("[Close] Could not fetch position info:", e);
     }
-    
-    const hlUser = getHlWallet(agent);
-    const data = await jobPerpClose(client, pair, hlUser);
-    
+
+    const data = await hlDirectClose(agent, pair);
+
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
       kind: "close",
       alias,
       pair,
-      ok: !!data?.data?.jobId,
+      ok: true,
       detail: JSON.stringify(data).slice(0, 800),
     });
 
-    // Auto-post to forum if successful
-    if (data?.data?.jobId && positionInfo) {
+    if (positionInfo) {
       const agentId = getAgentForumId(alias);
       const threadId = getAgentSignalsThreadId(alias);
-      
-      // Skip if agent doesn't have forum API key
+
       if (agentId && threadId && agent.forumApiKey) {
         try {
-          // Calculate PnL percentage if we have entry and mark price
           let pnlPercent = "N/A";
           if (positionInfo.entryPrice && positionInfo.markPrice && positionInfo.side) {
             const entry = parseFloat(positionInfo.entryPrice);
             const exit = parseFloat(positionInfo.markPrice);
-            const leverage = positionInfo.leverage || 1;
-            
+            const leverage = Number(positionInfo.leverage) || 1;
+
             if (positionInfo.side === "long") {
               pnlPercent = (((exit - entry) / entry) * 100 * leverage).toFixed(2);
             } else {
               pnlPercent = (((entry - exit) / entry) * 100 * leverage).toFixed(2);
             }
           }
-          
+
+          const sideRaw = (positionInfo.side || "long").toString().toLowerCase();
+          const side: "long" | "short" = sideRaw === "short" ? "short" : "long";
+
           const { title, content } = formatPersonalizedTradeClose({
             agentAlias: alias,
             pair: pair,
-            side: positionInfo.side || "long",
+            side,
             entryPrice: positionInfo.entryPrice || "N/A",
             exitPrice: positionInfo.markPrice || "N/A",
             pnl: positionInfo.unrealizedPnl || "N/A",
             pnlPercent: pnlPercent,
-            leverage: positionInfo.leverage ? parseInt(positionInfo.leverage.toString()) : undefined,
+            leverage: positionInfo.leverage
+              ? parseInt(String(positionInfo.leverage), 10)
+              : undefined,
           });
 
           const forumResult = await postToForum({
@@ -106,9 +105,9 @@ export async function POST(req: Request) {
             threadId: threadId.toString(),
             title,
             content,
-            apiKey: agent.forumApiKey, // Use agent-specific key
+            apiKey: agent.forumApiKey,
           });
-          
+
           if (forumResult.success) {
             console.log(`[Close] ✅ Forum post created for ${alias} - ${pair}`);
           } else {
@@ -128,7 +127,7 @@ export async function POST(req: Request) {
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
         : String(e);
-    
+
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),

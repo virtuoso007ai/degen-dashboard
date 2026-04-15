@@ -1,6 +1,6 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getAgentByAlias, getHlWallet } from "@/lib/agents";
-import { createAcpClient, jobPerpOpen } from "@/lib/acp";
+import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
+import { hlDirectOpen } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
 import { postToForum } from "@/lib/forum";
@@ -48,6 +48,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "leverage geçersiz" }, { status: 400 });
   }
 
+  const sizeUsd = parseFloat(size);
+  if (!Number.isFinite(sizeUsd) || sizeUsd <= 0) {
+    return NextResponse.json(
+      { error: "size pozitif USDC notional (sayı) olmalı" },
+      { status: 400 }
+    );
+  }
+
   let agents;
   try {
     agents = parseAgentsFromEnv();
@@ -64,21 +72,17 @@ export async function POST(req: Request) {
   }
 
   try {
-    const client = createAcpClient(agent.apiKey);
-    const hlUser = getHlWallet(agent);
-    const data = await jobPerpOpen(client, {
+    const data = await hlDirectOpen(agent, {
       pair,
       side,
-      size,
+      sizeUsd,
       leverage: Math.floor(lev),
       stopLoss,
       takeProfit,
       orderType,
       limitPrice,
-      hyperliquidUser: hlUser,
     });
-    
-    // Redis'e activity log ekle
+
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
@@ -88,43 +92,40 @@ export async function POST(req: Request) {
       side,
       size,
       leverage: Math.floor(lev),
-      ok: !!data?.data?.jobId,
+      ok: true,
       detail: JSON.stringify(data).slice(0, 800),
     });
 
-    // Auto-post to forum if successful
-    if (data?.data?.jobId) {
-      const agentId = getAgentForumId(alias);
-      const threadId = getAgentSignalsThreadId(alias);
-      
-      if (agentId && threadId && agent.forumApiKey) {
-        try {
-          const { title, content } = formatPersonalizedTradeOpen({
-            agentAlias: alias,
-            pair,
-            side,
-            entryPrice: limitPrice || "Market",
-            stopLoss,
-            takeProfit,
-            leverage: Math.floor(lev),
-          });
+    const agentId = getAgentForumId(alias);
+    const threadId = getAgentSignalsThreadId(alias);
 
-          const forumResult = await postToForum({
-            agentId,
-            threadId: threadId.toString(),
-            title,
-            content,
-            apiKey: agent.forumApiKey,
-          });
-          
-          if (forumResult.success) {
-            console.log(`[Open] ✅ Forum post created for ${alias} - ${pair}`);
-          } else {
-            console.error(`[Open] ❌ Forum post failed:`, forumResult.error);
-          }
-        } catch (forumError) {
-          console.error("[Open] Forum post exception:", forumError);
+    if (agentId && threadId && agent.forumApiKey) {
+      try {
+        const { title, content } = formatPersonalizedTradeOpen({
+          agentAlias: alias,
+          pair,
+          side,
+          entryPrice: limitPrice || "Market",
+          stopLoss,
+          takeProfit,
+          leverage: Math.floor(lev),
+        });
+
+        const forumResult = await postToForum({
+          agentId,
+          threadId: threadId.toString(),
+          title,
+          content,
+          apiKey: agent.forumApiKey,
+        });
+
+        if (forumResult.success) {
+          console.log(`[Open] ✅ Forum post created for ${alias} - ${pair}`);
+        } else {
+          console.error(`[Open] ❌ Forum post failed:`, forumResult.error);
         }
+      } catch (forumError) {
+        console.error("[Open] Forum post exception:", forumError);
       }
     }
 
@@ -134,8 +135,7 @@ export async function POST(req: Request) {
       e && typeof e === "object" && "message" in e
         ? String((e as Error).message)
         : String(e);
-    
-    // Hata da Redis'e kaydet
+
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),

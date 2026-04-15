@@ -7,7 +7,10 @@ export async function resolveWalletForDegen(
 ): Promise<string | undefined> {
   const hl = agent.hlWallet?.trim();
   if (hl) return hl;
-  const fromAcp = await fetchAcpWallet(agent.apiKey);
-  if (fromAcp) return fromAcp;
+  const ak = agent.apiKey?.trim();
+  if (ak) {
+    const fromAcp = await fetchAcpWallet(ak);
+    if (fromAcp) return fromAcp;
+  }
   return agent.walletAddress?.trim();
 }
