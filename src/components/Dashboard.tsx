@@ -95,6 +95,9 @@ type LeaderboardFull = {
 
 type MainTab = "ozet" | "pozisyonlar" | "acik-limitler" | "stratejiler" | "islemler" | "siralama";
 
+type HlReadinessRow = { alias: string; ready: boolean; missing: string[] };
+type HlReadiness = { allReady: boolean; agents: HlReadinessRow[] };
+
 /* ---------- helpers ---------- */
 
 function isLong(s: string | undefined): boolean {
@@ -191,6 +194,7 @@ export function Dashboard() {
   const [activityLog, setActivityLog] = useState<ActivityEntry[]>([]);
   const [cancellingOrderKey, setCancellingOrderKey] = useState<string | null>(null);
   const [cancellingAllPair, setCancellingAllPair] = useState(false);
+  const [hlReadiness, setHlReadiness] = useState<HlReadiness | null>(null);
   
   const loadActivity = useCallback(async () => {
     try {
@@ -252,6 +256,19 @@ export function Dashboard() {
   }, []);
 
   useEffect(() => {
+    let cancelled = false;
+    fetch("/api/trade/hl-readiness", { cache: "no-store" })
+      .then((r) => (r.ok ? r.json() : null))
+      .then((j: HlReadiness | null) => {
+        if (!cancelled && j?.agents) setHlReadiness(j);
+      })
+      .catch(() => {});
+    return () => {
+      cancelled = true;
+    };
+  }, []);
+
+  useEffect(() => {
     if (!snap?.agents.length) return;
     setAlias((prev) => prev || snap.agents[0].alias);
   }, [snap]);
@@ -305,7 +322,8 @@ export function Dashboard() {
           const summary = (data as { summary?: { ok: number; total: number } })?.summary;
           let msg: string;
           if (!ok) {
-            msg = `Hata: ${(data as { error?: string }).error ?? "?"}`;
+            const errBody = data as { error?: string };
+            msg = `Hata: ${errBody.error ?? JSON.stringify(data).slice(0, 400)}`;
           } else if (results && summary) {
             const bad = results.filter((r) => !r.ok);
             msg =
@@ -460,6 +478,26 @@ export function Dashboard() {
         </nav>
 
         {snapErr && <p className="mb-4 rounded-lg border border-red-500/30 bg-red-950/40 px-3 py-2 text-red-300 text-sm">{snapErr}</p>}
+
+        {hlReadiness && !hlReadiness.allReady && (
+          <div className="mb-4 rounded-lg border border-amber-500/40 bg-amber-950/40 px-3 py-2 text-sm text-amber-100/95">
+            <p className="font-semibold text-amber-200">HL v2: aşağıdaki agentlarda imza anahtarı veya master adres yok — trade API emir göndermez.</p>
+            <ul className="mt-2 list-disc pl-5 text-xs text-zinc-300 space-y-1">
+              {hlReadiness.agents
+                .filter((a) => !a.ready)
+                .map((a) => (
+                  <li key={a.alias}>
+                    <span className="font-mono text-amber-200">{a.alias}</span>
+                    {a.missing.length > 0 ? ` → eksik: ${a.missing.join(", ")}` : ""}
+                  </li>
+                ))}
+            </ul>
+            <p className="mt-2 text-[11px] text-zinc-500">
+              Vercel Environment: Telegram ile aynı <code className="text-zinc-400">AGENTS_JSON</code> ve her trade agent için{" "}
+              <code className="text-zinc-400">HL_API_WALLET_KEY_FRIDAY</code> gibi (alias büyük harf).
+            </p>
+          </div>
+        )}
 
         {/* ================================================================ */}
         {/*  ÖZET                                                           */}

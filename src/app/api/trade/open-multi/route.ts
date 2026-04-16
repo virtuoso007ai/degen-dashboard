@@ -186,12 +186,22 @@ export async function POST(req: Request) {
     }
   }
 
-  return NextResponse.json({
-    results,
-    summary: {
-      total: results.length,
-      ok: results.filter((r) => r.ok).length,
-      failed: results.filter((r) => !r.ok).length,
-    },
-  });
+  const summary = {
+    total: results.length,
+    ok: results.filter((r) => r.ok).length,
+    failed: results.filter((r) => !r.ok).length,
+  };
+
+  // Hepsi başarısızsa HTTP 502 — aksi halde fetch `res.ok` true kalıyor, panel "gönderildi" sanıyordu.
+  if (summary.total > 0 && summary.ok === 0) {
+    const firstErr =
+      results.find((r) => !r.ok)?.error ??
+      "Tüm agentlar için HL emri başarısız (Vercel: AGENTS_JSON + HL_API_WALLET_KEY_<ALIAS>)";
+    return NextResponse.json(
+      { results, summary, error: firstErr },
+      { status: 502 }
+    );
+  }
+
+  return NextResponse.json({ results, summary });
 }
