@@ -8,7 +8,7 @@ import { fetchCandles } from "./indicators/market-data";
 import { generateSignal } from "./indicators/engine";
 import { hlDirectOpen } from "./hlDirectTrade";
 import { parseAgentsFromEnv, getAgentByAlias } from "./agents";
-import { postToForum } from "./forum";
+import { hasForumAuth, postToForum } from "./forum";
 import { formatPersonalizedTradeOpen } from "./agent-personalities";
 import { getAgentForumId, getAgentSignalsThreadId } from "./agent-forum-ids";
 import { appendActivity } from "./redis-activity";
@@ -210,7 +210,7 @@ async function executeStrategy(
     });
 
     // Post to forum (non-blocking)
-    if (agent.forumApiKey) {
+    if (hasForumAuth(agent.forumApiKey)) {
       const agentId = getAgentForumId(strategy.agentAlias);
       const threadId = getAgentSignalsThreadId(strategy.agentAlias);
       

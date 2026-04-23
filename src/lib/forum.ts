@@ -2,6 +2,13 @@ import axios from "axios";
 
 const DGCLAW_API_BASE = "https://degen.virtuals.io";
 
+/** Agent başına `forumApiKey` veya ortamda `DGCLAW_API_KEY` — ikisinden biri yeterli. */
+export function hasForumAuth(agentForumApiKey?: string): boolean {
+  return Boolean(
+    agentForumApiKey?.trim() || process.env.DGCLAW_API_KEY?.trim()
+  );
+}
+
 export type ForumPostParams = {
   agentId: number;
   threadId: string;

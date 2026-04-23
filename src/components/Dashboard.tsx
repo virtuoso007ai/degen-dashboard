@@ -95,8 +95,18 @@ type LeaderboardFull = {
 
 type MainTab = "ozet" | "pozisyonlar" | "acik-limitler" | "stratejiler" | "islemler" | "siralama";
 
-type HlReadinessRow = { alias: string; ready: boolean; missing: string[] };
-type HlReadiness = { allReady: boolean; agents: HlReadinessRow[] };
+type HlReadinessRow = {
+  alias: string;
+  envSuffix: string;
+  ready: boolean;
+  missing: string[];
+  expectedEnvKeys: {
+    hlApiWalletKey: string;
+    master: string;
+    hlSubaccountOptional: string;
+  };
+};
+type HlReadiness = { allReady: boolean; hasSecretsJson?: boolean; agents: HlReadinessRow[] };
 
 /* ---------- helpers ---------- */
 
@@ -195,7 +205,13 @@ export function Dashboard() {
   const [cancellingOrderKey, setCancellingOrderKey] = useState<string | null>(null);
   const [cancellingAllPair, setCancellingAllPair] = useState(false);
   const [hlReadiness, setHlReadiness] = useState<HlReadiness | null>(null);
-  
+  const [marjAmount, setMarjAmount] = useState("");
+  const [marjWithdrawDest, setMarjWithdrawDest] = useState("");
+  const [marjBusy, setMarjBusy] = useState<"dep" | "wdr" | null>(null);
+  /** Base → HL perp_deposit (ACP_CLI_DIR); agent = üstteki hızlı işlem `alias` */
+  const [baseDepAmount, setBaseDepAmount] = useState("25");
+  const [baseDepBusy, setBaseDepBusy] = useState(false);
+
   const loadActivity = useCallback(async () => {
     try {
       const res = await fetch("/api/activity", { cache: "no-store" });
@@ -354,10 +370,38 @@ export function Dashboard() {
     setTradeMsg("");
     setConfirmAction({
       title: "Pozisyon kapatılsın mı?",
-      details: [`Agent: ${a}`, `Parite: ${p}`],
+      details: [`Agent: ${a}`, `Parite: ${p}`, "Yol: Hyperliquid doğrudan (HL v2)."],
       onConfirm: async () => {
         const { ok, data } = await apiPost("/api/trade/close", { alias: a, pair: p });
         const msg = ok ? "Kapatma gönderildi (HL v2)" : `Kapatma: ${data.error ?? "?"}`;
+        setTradeMsg(msg);
+        showToast(ok ? "success" : "error", msg);
+        bumpLog();
+        if (ok) loadSnap();
+      },
+    });
+  }
+
+  async function closePosAcpV1(a: string, p: string, side: "long" | "short") {
+    setTradeMsg("");
+    setConfirmAction({
+      title: "ACP v1 (Degen job) ile kapatılsın mı?",
+      details: [
+        `Agent: ${a}`,
+        `Parite: ${p}`,
+        `Yön: ${side}`,
+        "Eski perp_trade close — AGENTS_JSON’da forumApiKey (dgc_…) olmalı.",
+      ],
+      onConfirm: async () => {
+        const { ok, data } = await apiPost("/api/trade/close", {
+          alias: a,
+          pair: p,
+          mode: "degen_acp_v1",
+          side,
+        });
+        const msg = ok
+          ? "Kapatma kuyruğa alındı (Degen ACP v1)"
+          : `Kapatma (v1): ${(data as { error?: string }).error ?? "?"}`;
         setTradeMsg(msg);
         showToast(ok ? "success" : "error", msg);
         bumpLog();
@@ -488,13 +532,22 @@ export function Dashboard() {
                 .map((a) => (
                   <li key={a.alias}>
                     <span className="font-mono text-amber-200">{a.alias}</span>
+                    <span className="text-zinc-500"> (suffix </span>
+                    <span className="font-mono text-zinc-400">{a.envSuffix}</span>
+                    <span className="text-zinc-500">)</span>
                     {a.missing.length > 0 ? ` → eksik: ${a.missing.join(", ")}` : ""}
+                    <div className="mt-1 font-mono text-[10px] text-zinc-500 break-all pl-0">
+                      {a.expectedEnvKeys.master}, {a.expectedEnvKeys.hlApiWalletKey}
+                      {`, ${a.expectedEnvKeys.hlSubaccountOptional} (opsiyonel)`}
+                    </div>
                   </li>
                 ))}
             </ul>
             <p className="mt-2 text-[11px] text-zinc-500">
-              Vercel Environment: Telegram ile aynı <code className="text-zinc-400">AGENTS_JSON</code> ve her trade agent için{" "}
-              <code className="text-zinc-400">HL_API_WALLET_KEY_FRIDAY</code> gibi (alias büyük harf).
+              Telegram ile aynı <code className="text-zinc-400">AGENTS_JSON</code> veya <code className="text-zinc-400">AGENTS_JSON_PATH</code> (Railway dosya).
+              Her agent için yukarıdaki <code className="text-zinc-400">HL_*_SUFFIX</code> değişkenleri — veya tek secret{" "}
+              <code className="text-zinc-400">HL_TRADE_SECRETS_JSON</code>
+              {hlReadiness.hasSecretsJson ? " (tanımlı)." : " (şu an yok)."}
             </p>
           </div>
         )}
@@ -664,12 +717,205 @@ export function Dashboard() {
               {tradeMsg && <p className="mt-2 text-xs text-zinc-500">{tradeMsg}</p>}
             </div>
 
-            <div className="mb-6 rounded-2xl border border-zinc-700/80 bg-zinc-900/40 p-4">
-              <h2 className="text-sm font-semibold text-zinc-300 mb-2">Marj: deposit / withdraw</h2>
+            <div className="mb-6 rounded-2xl border border-zinc-700/80 bg-zinc-900/40 p-4 space-y-3">
+              <h2 className="text-sm font-semibold text-zinc-300">Marj &amp; yatırım (HL v2)</h2>
               <p className="text-xs text-zinc-500 leading-relaxed">
-                Panel HL v2 ile sadece perp işlem yapıyor; ACP <code className="text-zinc-400">perp_deposit</code> /{" "}
-                <code className="text-zinc-400">perp_withdraw</code> kaldırıldı. Marj için{" "}
-                <code className="text-zinc-400">acp-cli</code>, Hyperliquid arayüzü veya cüzdan transferi kullanın.
+                <strong className="text-zinc-400">1) Base → HL (DegenClaw)</strong> — Aşağıdaki{" "}
+                <strong className="text-amber-200/90">Base’den HL’ye yatır</strong> düğmesi, agent{" "}
+                <code className="text-zinc-400">walletAddress</code> (Privy master) üzerindeki Base USDC ile{" "}
+                <code className="text-zinc-400">perp_deposit</code> job açıp <code className="text-zinc-400">fund</code> eder (
+                dgclaw-skill ile aynı mantık). Sunucuda <code className="text-zinc-400">ACP_CLI_DIR</code> (acp-cli-v2) ve
+                giriş yapılmış <code className="text-zinc-400">config.json</code> gerekir (en az 20 USDC).
+                <br />
+                <strong className="text-zinc-400">2) HL içi</strong> — <strong className="text-zinc-400">Spot → Perp</strong> /{" "}
+                <strong className="text-zinc-400">Perp → Spot</strong> yalnızca <em>zaten Hyperliquid’de</em> olan USDC için{" "}
+                <code className="text-zinc-400">usdClassTransfer</code>.
+                <br />
+                <strong className="text-zinc-400">3) Manuel köprü</strong> — istersen{" "}
+                <a href="https://app.hyperliquid.xyz" target="_blank" rel="noopener noreferrer" className="text-sky-400 hover:underline">
+                  Hyperliquid
+                </a>{" "}
+                arayüzünden de deposit yapabilirsin.
+                <br />
+                <strong className="text-zinc-400">Perp → L1 çek</strong>: <code className="text-zinc-400">withdraw3</code>.
+              </p>
+              <div className="rounded-xl border border-amber-500/25 bg-amber-500/5 p-3 space-y-2">
+                <p className="text-[10px] font-semibold text-amber-200/90 uppercase tracking-wide">
+                  Base USDC → Hyperliquid (perp_deposit)
+                </p>
+                <div className="flex flex-wrap items-end gap-2">
+                  <label className="text-[10px] text-zinc-500">
+                    USDC (min 20)
+                    <input
+                      className={`${inputCls} mt-0.5 w-28 block`}
+                      value={baseDepAmount}
+                      onChange={(e) => setBaseDepAmount(e.target.value)}
+                      placeholder="25"
+                      inputMode="decimal"
+                    />
+                  </label>
+                  <button
+                    type="button"
+                    disabled={
+                      baseDepBusy ||
+                      marjBusy !== null ||
+                      !alias ||
+                      !baseDepAmount.trim()
+                    }
+                    onClick={async () => {
+                      setBaseDepBusy(true);
+                      try {
+                        const { ok, data } = await apiPost("/api/trade/perp-deposit", {
+                          alias,
+                          amount: baseDepAmount.trim(),
+                        });
+                        const err = (data as { error?: string })?.error;
+                        const jobId = (data as { jobId?: string | number })?.jobId;
+                        showToast(
+                          ok ? "success" : "error",
+                          ok
+                            ? `perp_deposit gönderildi (job ${String(jobId ?? "?")})`
+                            : err || "Hata"
+                        );
+                        if (ok) {
+                          bumpLog();
+                          loadSnap();
+                        }
+                      } catch (e) {
+                        showToast("error", e instanceof Error ? e.message : String(e));
+                      } finally {
+                        setBaseDepBusy(false);
+                      }
+                    }}
+                    className="rounded-lg bg-amber-600/90 px-3 py-2 text-xs font-semibold text-white hover:bg-amber-500 disabled:opacity-40"
+                  >
+                    {baseDepBusy ? "…" : "Base'den HL'ye yatır"}
+                  </button>
+                </div>
+                <p className="text-[10px] text-zinc-500">
+                  Vercel: ACP yok — env&apos;de{" "}
+                  <code className="text-zinc-400">ACP_PERP_DEPOSIT_PROXY_URL</code> +{" "}
+                  <code className="text-zinc-400">ACP_PERP_DEPOSIT_PROXY_SECRET</code> ile Railway worker
+                  ( <code className="text-zinc-400">npm run perp-deposit-worker</code> +{" "}
+                  <code className="text-zinc-400">ACP_CLI_DIR</code> ) veya tüm paneli Railway&apos;de çalıştır.
+                </p>
+              </div>
+
+              <p className="text-[10px] font-medium text-zinc-400">HL içi transfer (spot ↔ perp)</p>
+              <div className="flex flex-wrap items-end gap-2">
+                <label className="text-[10px] text-zinc-500">
+                  USDC
+                  <input
+                    className={`${inputCls} mt-0.5 w-28 block`}
+                    value={marjAmount}
+                    onChange={(e) => setMarjAmount(e.target.value)}
+                    placeholder="10"
+                    inputMode="decimal"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={
+                    marjBusy !== null || baseDepBusy || !alias || !marjAmount.trim()
+                  }
+                  onClick={async () => {
+                    setMarjBusy("dep");
+                    try {
+                      const { ok, data } = await apiPost("/api/trade/deposit", {
+                        alias,
+                        amount: marjAmount.trim(),
+                        direction: "spotToPerp",
+                      });
+                      const err = (data as { error?: string })?.error;
+                      showToast(ok ? "success" : "error", ok ? "Spot → Perp transfer gönderildi" : err || "Hata");
+                      if (ok) {
+                        bumpLog();
+                        loadSnap();
+                      }
+                    } catch (e) {
+                      showToast("error", e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setMarjBusy(null);
+                    }
+                  }}
+                  className="rounded-lg bg-sky-600/90 px-3 py-2 text-xs font-semibold text-white hover:bg-sky-500 disabled:opacity-40"
+                >
+                  {marjBusy === "dep" ? "…" : "Spot → Perp"}
+                </button>
+                <button
+                  type="button"
+                  disabled={
+                    marjBusy !== null || baseDepBusy || !alias || !marjAmount.trim()
+                  }
+                  onClick={async () => {
+                    setMarjBusy("dep");
+                    try {
+                      const { ok, data } = await apiPost("/api/trade/deposit", {
+                        alias,
+                        amount: marjAmount.trim(),
+                        direction: "perpToSpot",
+                      });
+                      const err = (data as { error?: string })?.error;
+                      showToast(ok ? "success" : "error", ok ? "Perp → Spot transfer gönderildi" : err || "Hata");
+                      if (ok) {
+                        bumpLog();
+                        loadSnap();
+                      }
+                    } catch (e) {
+                      showToast("error", e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setMarjBusy(null);
+                    }
+                  }}
+                  className="rounded-lg bg-zinc-700 px-3 py-2 text-xs font-semibold text-zinc-200 hover:bg-zinc-600 disabled:opacity-40"
+                >
+                  Perp → Spot
+                </button>
+              </div>
+              <div className="flex flex-wrap items-end gap-2 border-t border-zinc-800/80 pt-3">
+                <label className="text-[10px] text-zinc-500">
+                  L1 hedef (opsiyonel)
+                  <input
+                    className={`${inputCls} mt-0.5 w-full min-w-[200px] max-w-sm block font-mono text-[11px]`}
+                    value={marjWithdrawDest}
+                    onChange={(e) => setMarjWithdrawDest(e.target.value)}
+                    placeholder="0x... (boş = master)"
+                  />
+                </label>
+                <button
+                  type="button"
+                  disabled={
+                    marjBusy !== null || baseDepBusy || !alias || !marjAmount.trim()
+                  }
+                  onClick={async () => {
+                    setMarjBusy("wdr");
+                    try {
+                      const payload: Record<string, string> = {
+                        alias,
+                        amount: marjAmount.trim(),
+                      };
+                      if (marjWithdrawDest.trim()) payload.destination = marjWithdrawDest.trim();
+                      const { ok, data } = await apiPost("/api/trade/withdraw", payload);
+                      const err = (data as { error?: string })?.error;
+                      showToast(ok ? "success" : "error", ok ? "Çekim talebi gönderildi (withdraw3)" : err || "Hata");
+                      if (ok) {
+                        bumpLog();
+                        loadSnap();
+                      }
+                    } catch (e) {
+                      showToast("error", e instanceof Error ? e.message : String(e));
+                    } finally {
+                      setMarjBusy(null);
+                    }
+                  }}
+                  className="rounded-lg bg-violet-600/90 px-3 py-2 text-xs font-semibold text-white hover:bg-violet-500 disabled:opacity-40"
+                >
+                  {marjBusy === "wdr" ? "…" : "Perp → L1 çek"}
+                </button>
+              </div>
+              <p className="text-[10px] text-zinc-600">
+                İşlem agentı: üstteki <span className="text-zinc-400">hızlı işlem</span> seçicindeki{" "}
+                <span className="font-mono text-amber-200/90">{alias || "—"}</span>
               </p>
             </div>
 
@@ -767,17 +1013,29 @@ export function Dashboard() {
                         )}
 
                         {/* action buttons */}
-                        <div className="mt-3 flex gap-2">
-                          <button type="button" onClick={() => {
-                            if (isModifying) { setModifyKey(null); }
-                            else { setModifyKey(cardKey); setModSL(""); setModTP(""); setModLev(""); setModMsg(""); }
-                          }}
-                            className={`flex-1 rounded-xl border py-2 text-xs font-semibold ${isModifying ? "border-amber-500/40 bg-amber-950/60 text-amber-200" : "border-amber-800/60 bg-amber-950/40 text-amber-300 hover:bg-amber-950/70"}`}>
-                            {isModifying ? "Gizle" : "Modify"}
-                          </button>
-                          <button type="button" onClick={() => closePos(a.alias, sym)}
-                            className="flex-1 rounded-xl bg-rose-950/80 border border-rose-800/60 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-900/80">
-                            Kapat
+                        <div className="mt-3 flex flex-col gap-2">
+                          <div className="flex gap-2">
+                            <button type="button" onClick={() => {
+                              if (isModifying) { setModifyKey(null); }
+                              else { setModifyKey(cardKey); setModSL(""); setModTP(""); setModLev(""); setModMsg(""); }
+                            }}
+                              className={`flex-1 rounded-xl border py-2 text-xs font-semibold ${isModifying ? "border-amber-500/40 bg-amber-950/60 text-amber-200" : "border-amber-800/60 bg-amber-950/40 text-amber-300 hover:bg-amber-950/70"}`}>
+                              {isModifying ? "Gizle" : "Modify"}
+                            </button>
+                            <button type="button" onClick={() => closePos(a.alias, sym)}
+                              className="flex-1 rounded-xl bg-rose-950/80 border border-rose-800/60 py-2 text-xs font-semibold text-rose-200 hover:bg-rose-900/80">
+                              Kapat (HL)
+                            </button>
+                          </div>
+                          <button
+                            type="button"
+                            onClick={() =>
+                              closePosAcpV1(a.alias, sym, long ? "long" : "short")
+                            }
+                            className="w-full rounded-xl border border-zinc-600 bg-zinc-800/80 py-2 text-[11px] font-medium text-zinc-300 hover:bg-zinc-800"
+                            title="Eski ACP perp_trade job — pozisyon v1 ile açıldıysa"
+                          >
+                            Kapat (ACP v1 / Degen job)
                           </button>
                         </div>
                       </div>

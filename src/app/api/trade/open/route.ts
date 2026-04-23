@@ -3,7 +3,7 @@ import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
 import { hlDirectOpen } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
-import { postToForum } from "@/lib/forum";
+import { hasForumAuth, postToForum } from "@/lib/forum";
 import { formatPersonalizedTradeOpen } from "@/lib/agent-personalities";
 import { getAgentForumId, getAgentSignalsThreadId } from "@/lib/agent-forum-ids";
 
@@ -99,7 +99,7 @@ export async function POST(req: Request) {
     const agentId = getAgentForumId(alias);
     const threadId = getAgentSignalsThreadId(alias);
 
-    if (agentId && threadId && agent.forumApiKey) {
+    if (agentId && threadId && hasForumAuth(agent.forumApiKey)) {
       try {
         const { title, content } = formatPersonalizedTradeOpen({
           agentAlias: alias,

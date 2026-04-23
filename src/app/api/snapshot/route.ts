@@ -2,6 +2,10 @@ import { NextResponse } from "next/server";
 import { parseAgentsFromEnv } from "@/lib/agents";
 import { requireSession } from "@/lib/auth-route";
 import { fetchDgAccount, fetchDgPositions } from "@/lib/degen";
+import {
+  fetchHlMarginForUser,
+  mergeAccountWithHlMargin,
+} from "@/lib/hlInfoBalances";
 import { resolveWalletForDegen } from "@/lib/wallet";
 
 export const dynamic = "force-dynamic";
@@ -34,10 +38,12 @@ export async function GET() {
             account: null,
           };
         }
-        const [positions, account] = await Promise.all([
+        const [positions, dgAccount, hlMargin] = await Promise.all([
           fetchDgPositions(w),
           fetchDgAccount(w),
+          fetchHlMarginForUser(w),
         ]);
+        const account = mergeAccountWithHlMargin(dgAccount, hlMargin);
         return {
           alias: a.alias,
           label: a.label,

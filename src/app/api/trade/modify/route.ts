@@ -22,7 +22,7 @@ export async function POST(req: Request) {
   }
 
   const alias = body.alias?.trim();
-  const pair = body.pair?.trim().toUpperCase();
+  const pair = body.pair?.trim().toUpperCase().replace(/-USD$/i, "");
   const stopLoss = body.stopLoss?.trim() || undefined;
   const takeProfit = body.takeProfit?.trim() || undefined;
   const leverage = body.leverage;

@@ -1,18 +1,27 @@
 import { NextResponse } from "next/server";
 import { parseAgentsFromEnv, getAgentByAlias } from "@/lib/agents";
-import { hlDirectWithdraw3 } from "@/lib/hlDirectTrade";
 import { requireSession } from "@/lib/auth-route";
 import { appendActivity } from "@/lib/redis-activity";
+import { runAcpPerpDeposit } from "@/lib/acpPerpDeposit";
+import {
+  getPerpDepositProxy,
+  runAcpPerpDepositProxied,
+} from "@/lib/acpPerpDepositProxy";
 
 /**
- * HL v2: perp’ten L1’e çekim (withdraw3). ACP `perp_withdraw` job yok.
- * Body: { alias, amount, destination? } — destination yoksa agent walletAddress (master).
+ * Base (8453) agent master USDC → Hyperliquid — ACP `perp_deposit` + `client fund`.
+ *
+ * - Doğrudan: ACP_CLI_DIR + acp-cli-v2 (Railway’de tam uygulama veya yerel).
+ * - Vercel: ACP_PERP_DEPOSIT_PROXY_URL + ACP_PERP_DEPOSIT_PROXY_SECRET → harici worker (Railway).
  */
+export const maxDuration = 300;
+export const dynamic = "force-dynamic";
+
 export async function POST(req: Request) {
   const unauthorized = await requireSession();
   if (unauthorized) return unauthorized;
 
-  let body: { alias?: string; amount?: string; destination?: string };
+  let body: { alias?: string; amount?: string };
   try {
     body = await req.json();
   } catch {
@@ -21,7 +30,6 @@ export async function POST(req: Request) {
 
   const alias = body.alias?.trim();
   const amount = body.amount?.trim();
-  const destRaw = body.destination?.trim();
   if (!alias || !amount) {
     return NextResponse.json(
       { error: "alias ve amount (USDC) gerekli" },
@@ -40,31 +48,38 @@ export async function POST(req: Request) {
   }
 
   const agent = getAgentByAlias(agents, alias);
-  if (!agent) {
-    return NextResponse.json({ error: "Bilinmeyen alias" }, { status: 404 });
-  }
-
-  const destination = (destRaw || agent.walletAddress?.trim() || "") as `0x${string}`;
-  if (!/^0x[0-9a-fA-F]{40}$/i.test(destination)) {
+  const master = agent?.walletAddress?.trim();
+  if (!agent || !master) {
     return NextResponse.json(
-      { error: "destination (0x...) veya AGENTS_JSON walletAddress gerekli" },
-      { status: 400 }
+      { error: "Bilinmeyen alias veya walletAddress yok" },
+      { status: 404 }
     );
   }
 
   try {
-    const data = await hlDirectWithdraw3(agent, { destination, amount });
+    const proxy = getPerpDepositProxy();
+    const result = proxy
+      ? await runAcpPerpDepositProxied({
+          masterAddress: master,
+          amountUsdc: amount,
+        })
+      : runAcpPerpDeposit({ masterAddress: master, amountUsdc: amount });
 
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
-      kind: "withdraw",
+      kind: "deposit",
       alias,
+      pair: "perp_deposit",
       ok: true,
-      detail: JSON.stringify({ amount, destination, data }).slice(0, 800),
+      detail: JSON.stringify({
+        jobId: result.jobId,
+        amount: result.amount,
+        message: result.message,
+      }).slice(0, 800),
     });
 
-    return NextResponse.json(data);
+    return NextResponse.json({ ok: true, ...result });
   } catch (e) {
     const msg =
       e && typeof e === "object" && "message" in e
@@ -74,8 +89,9 @@ export async function POST(req: Request) {
     await appendActivity({
       id: `${Date.now()}-${Math.random().toString(36).slice(2, 9)}`,
       at: new Date().toISOString(),
-      kind: "withdraw",
+      kind: "deposit",
       alias: alias!,
+      pair: "perp_deposit",
       ok: false,
       detail: msg.slice(0, 800),
     });

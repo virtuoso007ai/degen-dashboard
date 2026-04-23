@@ -1,5 +1,6 @@
 import { NextResponse } from "next/server";
-import { parseAgentsFromEnv, getHlWallet } from "@/lib/agents";
+import { parseAgentsFromEnv } from "@/lib/agents";
+import { resolveHlQueryWallet } from "@/lib/hlQueryWallet";
 import { requireSession } from "@/lib/auth-route";
 import axios from "axios";
 
@@ -51,7 +52,7 @@ export async function GET() {
   const rows = await Promise.all(
     agents.map(async (a) => {
       try {
-        const w = getHlWallet(a);
+        const w = resolveHlQueryWallet(a);
         if (!w) {
           return {
             alias: a.alias,
